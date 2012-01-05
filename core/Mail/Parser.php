@@ -67,13 +67,16 @@ class ERP_Mail_Parser
 		$this->_content = file_get_contents( $this->_file );
 	}
 
-	private function process_encoding( $encode )
+	private function process_encoding( $encode , $overrideAuto = false)
 	{
-		if ( extension_loaded( 'mbstring' ) && $this->_encoding !== $this->_charset )
+		// HACK: Auto fails and removes chars, lets try ISO
+        if( $overrideAuto && extension_loaded( 'mbstring' ) ){
+            $encode = mb_convert_encoding( $encode, $this->_encoding, 'ISO-8859-1, utf-8' );
+        }
+        else if ( extension_loaded( 'mbstring' ) && $this->_encoding !== $this->_charset )
 		{
 			$encode = mb_convert_encoding( $encode, $this->_encoding, $this->_charset );
 		}
-
 		return( $encode );
 	}
 
@@ -105,7 +108,7 @@ class ERP_Mail_Parser
 		if ( extension_loaded( 'mbstring' ) )
 		{
 			$this->_from = $this->process_encoding( $this->_from );
-			$this->_subject = $this->process_encoding( $this->_subject );
+			$this->_subject = $this->process_encoding( $this->_subject , true);
 			$this->_body = $this->process_encoding( $this->_body );
 		}
 	}

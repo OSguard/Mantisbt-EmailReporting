@@ -675,6 +675,20 @@ class ERP_mailbox_api
 			$t_description = $p_email[ 'X-Mantis-Body' ];
 
 			$t_description = $this->identify_replies( $t_description );
+            $t_description = $this->identify_signatur( $t_description );
+            $notes = bugnote_get_all_bugnotes( $t_bug_id );
+            $r = array(bug_get_field($t_bug_id,"summary")); 
+            foreach($notes as $a){
+                $r[$a->id] = $a->note;
+            }
+            //var_dump( $r );
+            $t_description = $this->identify_double_content( $t_description, $r );
+            //var_dump($t_description);
+
+            # reset caching
+            global $g_cache_bugnotes;
+            unset( $g_cache_bugnotes[(int)$t_bug_id] );
+
 			$t_description = $this->add_additional_info( 'note', $p_email, $t_description );
 
 			# Event integration
@@ -723,7 +737,10 @@ class ERP_mailbox_api
 			$t_bug_data->status					= $this->_bug_submit_status;
 			$t_bug_data->summary				= $p_email[ 'Subject' ];
 
-			$t_bug_data->description			= $this->add_additional_info( 'issue', $p_email, $p_email[ 'X-Mantis-Body' ] );
+			$t_description = $p_email[ 'X-Mantis-Body' ];
+            $t_description = $this->identify_signatur( $t_description );
+
+			$t_bug_data->description			= $this->add_additional_info( 'issue', $p_email, $t_description );
 
 			$t_bug_data->steps_to_reproduce		= $this->_default_bug_steps_to_reproduce;
 			$t_bug_data->additional_information	= $this->_default_bug_additional_info;
@@ -1191,6 +1208,71 @@ class ERP_mailbox_api
 				file_put_contents( $t_file_name, $p_msg );
 			}
 		}
+	}
+
+    private function clean_string( $input ){
+        $output = ereg_replace("[^A-Za-z0-9]", "", $input);
+        return $output;
+    }
+
+    private function identify_double_content( $mail, $history ){
+
+        if( !is_array($history) ){
+            echo "no array";
+            return $mail;
+        }
+        if( sizeof($history) == 0 ){
+            echo "size is 0";
+            return $mail;
+        }
+        krsort($history);
+        foreach( $history as $noteID => $h ){
+            $h = $this->clean_string( $h );
+            $mailArray = explode("\n", $mail );
+            $lastFount = -1;
+            $replaceBlock = array();
+            foreach( $mailArray as $k => $mailLine ){
+                $mailLineClean = $this->clean_string( $mailLine );
+                //echo $k. " " .$mailLineClean."\n";
+                if( $mailLineClean == "" || strpos( $h, $mailLineClean ) ){
+                    //echo $mailLineClean. " found in ".$h." \n";
+                    if($lastFount == $k - 1){
+                        $replaceBlock[] = $mailLine;
+                    }else{
+                        if( strlen($this->clean_string(implode("\n", $replaceBlock))) > 250 && sizeof($replaceBlock) > 5 )  {          
+                            $mail = str_replace( implode("\n", $replaceBlock), "[DUPLICATED CONTENT ~".$noteID."]", $mail );
+                            var_dump(implode("\n", $replaceBlock));
+                        }                        
+                        $replaceBlock = array();  
+                        $replaceBlock[] = $mailLine;          
+                    }
+                    $lastFount = $k;
+                }
+            }
+            if( strlen($this->clean_string(implode("\n", $replaceBlock))) > 250 && sizeof($replaceBlock) > 5 ){
+              $mail = str_replace( implode("\n", $replaceBlock), "[DUPLICATED CONTENT ~".$noteID."]", $mail );
+                var_dump(implode("\n", $replaceBlock));
+            }
+        }
+        var_dump( $mail);
+        return $mail;
+
+    }
+
+    # --------------------
+	# Removes signatur from mails
+	private function identify_signatur( $p_description )
+	{
+		$t_description = $p_description;
+
+        $sig_pos = strripos( $t_description, "-- " );
+        var_dump($t_description, $sig_pos);
+
+        if( $sig_pos !== FALSE && substr($t_description, $sig_pos - 1, 1) != "-" ){
+            $t_description = substr( $t_description, 0, $sig_pos ) . "-- \n[SIGNATURE REMOVED]";
+        }
+
+        return( $t_description );   
 	}
 
 	# --------------------
